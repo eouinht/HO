@@ -1,23 +1,23 @@
-* 1. Clone repo
+* Clone repo
 ```
     git clone https://github.com/eouinht/HO.git
     cd HO 
 
 ```
-* 2. Tạo venv
+* Tạo venv
 ```
     python -m venv venv
     source venv/bin/activate
 
 ```
-* 3. Cài đặt dependencies
+* Cài đặt dependencies
 ```
     pip install -r requirements.txt
 
 ```
-* 4. Chạy
+* Chạy
 ```
     cd handover_rl
     python main_train.py
 ```
-** Note: code chưa hoàn thiện, có thể bắt đầu với main_train.py để xem cách hoạt động của các file link đến main_train.py như nào 
+* Note: code chưa hoàn thiện, có thể bắt đầu với main_train.py để xem cách hoạt động của các file link đến main_train.py như nào 
