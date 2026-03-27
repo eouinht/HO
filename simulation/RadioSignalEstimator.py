@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Dict 
 
 def compute_distance_matrix(ue_pos: np.ndarray, ru_pos: np.ndarray) -> np.ndarray:
     """
@@ -16,7 +16,7 @@ def compute_distance_matrix(ue_pos: np.ndarray, ru_pos: np.ndarray) -> np.ndarra
 
 def compute_pathloss_db(distance_m: np.ndarray, carrier_freq_ghz: float) -> np.ndarray:
     """
-    Free-space-like pathloss surrogate.
+    Simplified 3GPP UMa-like pathloss surrogate.
 
     Input:
         distance_m: (N, M) float
@@ -25,12 +25,29 @@ def compute_pathloss_db(distance_m: np.ndarray, carrier_freq_ghz: float) -> np.n
     Output:
         pathloss_db: (N, M) float
     """
+    
     pathloss_db = (
         32.4
-        + 20.0 * np.log10(distance_m)
+        + 21.0 * np.log10(distance_m)
         + 20.0 * np.log10(carrier_freq_ghz)
     )
     return pathloss_db.astype(np.float64)
+
+def compute_noise_power_per_rb_w(rb_bandwidth_hz: float, noise_figure_db: float)-> float:
+    """
+    Simplified 3GPP UMa-like pathloss surrogate.
+
+    Input:
+        distance_m: (N, M) float
+        carrier_freq_ghz: float
+
+    Output:
+        pathloss_db: (N, M) float
+    """
+    noise_power_dbm = -174.0 + 10.0 * np.log10(rb_bandwidth_hz) + noise_figure_db
+    noise_power_w = 10.0 ** ((noise_power_dbm - 30.0) / 10.0)
+    return float(noise_power_w)
+
 
 def compute_rsrp_dbm(pathloss_db: np.ndarray, ru_tx_power_dbm: float) -> np.ndarray:
     """
@@ -61,53 +78,114 @@ def compute_noise_power_dbm(bandwidth_mhz: float, noise_figure_db: float) -> flo
     return float(noise_power_dbm)
 
 
-def dbm_to_mw(power_dbm: np.ndarray) -> np.ndarray:
+def dbm_to_w(power_dbm: np.ndarray) -> np.ndarray:
     """
     Input:
         power_dbm: ndarray
 
     Output:
-        power_mw: ndarray
+        power_w: ndarray
     """
-    return np.power(10.0, power_dbm / 10.0)
+    return np.power(10.0, (power_dbm - 30.0)/ 10.0)
 
 
-def mw_to_db(power_mw: np.ndarray) -> np.ndarray:
+def w_to_dbm(power_w: np.ndarray) -> np.ndarray:
     """
     Input:
-        power_mw: ndarray
+        power_w: ndarray
 
     Output:
-        power_db: ndarray
+        power_dbm: ndarray
     """
-    return 10.0 * np.log10(np.maximum(power_mw, 1e-12))
+    return 10.0 * np.log10(np.maximum(power_w, 1e-12)) + 30.0
 
-
-def compute_sinr_db(rsrp_dbm: np.ndarray, noise_power_dbm: float) -> np.ndarray:
+def generate_rayleigh_channel_power(n_ue: int, n_ru: int, n_antennas: int=32)-> np.ndarray:
     """
-    Approximate full-frequency reuse interference:
-    for each UE and RU:
-        SINR_i,j = signal_j / (sum(other signals) + noise)
+    Generate Rayleigh fading channel power.
 
     Input:
+        n_ue: int
+        n_ru: int
+        n_antennas: int
+
+    Output:
+        channel_power: (N, M) float
+    """
+    real = np.random.randn(n_ue, n_ru, n_antennas)
+    imag = np.random.randn(n_ue, n_ru, n_antennas)
+    h = (real + 1j * imag) / np.sqrt(2.0)
+    channal_power = np.sum(np.abs(h) **2, axis=2)
+    return channal_power.astype(np.float64)
+
+def compute_large_scale_power_w(
+    ru_tx_power_dbm:float,
+    pathloss_db: np.ndarray
+)-> np.ndarray:
+    """
+    Generate Rayleigh fading channel power.
+
+    Input:
+        n_ue: int
+        n_ru: int
+        n_antennas: int
+
+    Output:
+        channel_power: (N, M) float
+    """
+    rx_power_dbm = ru_tx_power_dbm - pathloss_db
+    return dbm_to_w(rx_power_dbm).astype(np.float64)
+
+def compute_channel_power_w(
+    large_scale_power_w: np.ndarray,
+    fading_power: np.ndarray,
+    n_antennas: int
+)-> np.ndarray:
+    """
+    Received large-scale power in Watt without fading.
+
+    Input:
+        ru_tx_power_dbm: float
+        pathloss_db: (N, M) float
+
+    Output:
+        large_scale_power_w: (N, M) float
+    """
+    normalized_fading= fading_power/float(n_antennas)
+    channel_power_w = large_scale_power_w*normalized_fading
+    return channel_power_w.astype(np.float64)
+
+def compute_gain( channel_power_w: np.ndarray,
+                 noise_power_rb_w: float) -> np.ndarray:
+    """
+    Apply Rayleigh fading to large-scale received power.
+
+    Input:
+        large_scale_power_w: (N, M) float
+        fading_power: (N, M) float
+        n_antennas: int
+
+    Output:
+        channel_power_w: (N, M) float
+    """
+    gain = channel_power_w/max(noise_power_rb_w, 1e-30)
+    return gain.astype(np.float64)
+
+
+
+def compute_rsrp_dbm( channel_power_w: np.ndarray) -> np.ndarray:
+    """
+    Approximate RSRP from channel power.
+
+    Input:
+        channel_power_w: (N, M) float
+
+    Output:
         rsrp_dbm: (N, M) float
-        noise_power_dbm: float
-
-    Output:
-        sinr_db: (N, M) float
     """
-    signal_mw = dbm_to_mw(rsrp_dbm)              # (N, M)
-    total_power_mw = np.sum(signal_mw, axis=1, keepdims=True)
-    noise_mw = dbm_to_mw(np.array(noise_power_dbm, dtype=np.float64))
-
-    interference_mw = total_power_mw - signal_mw
-    sinr_linear = signal_mw / np.maximum(interference_mw + noise_mw, 1e-12)
-    sinr_db = 10.0 * np.log10(np.maximum(sinr_linear, 1e-12))
-
-    return sinr_db.astype(np.float64)
+    return w_to_dbm(channel_power_w).astype(np.float64)
 
 
-def select_serving_ru( rsrp_dbm: np.ndarray ) -> np.ndarray:
+def select_serving_ru_from_rsrp( rsrp_dbm: np.ndarray) -> np.ndarray:
     """
     Input:
         rsrp_dbm: (N, M) float
@@ -118,26 +196,20 @@ def select_serving_ru( rsrp_dbm: np.ndarray ) -> np.ndarray:
     return np.argmax(rsrp_dbm, axis=1).astype(np.int32)
 
 
-def extract_serving_metrics( rsrp_dbm: np.ndarray, sinr_db: np.ndarray, serving_ru: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray]:
+def extract_serving_gain( gain: np.ndarray, serving_ru: np.ndarray ) -> np.ndarray:
     """
     Input:
-        rsrp_dbm: (N, M) float
-        sinr_db: (N, M) float
+        gain: (N, M) float
         serving_ru: (N,) int
 
     Output:
-        serving_rsrp_dbm: (N,) float
-        serving_sinr_db: (N,) float
+        serving_gain: (N,) float
     """
     ue_idx = np.arange(serving_ru.shape[0])
-    serving_rsrp_dbm = rsrp_dbm[ue_idx, serving_ru]
-    serving_sinr_db = sinr_db[ue_idx, serving_ru]
-    return serving_rsrp_dbm.astype(np.float64), serving_sinr_db.astype(np.float64)
+    return gain[ue_idx, serving_ru].astype(np.float64)
 
 
-def extract_best_neighbor_ru( rsrp_dbm: np.ndarray, serving_ru: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray]:
+def extract_best_neighbor_ru( rsrp_dbm: np.ndarray, serving_ru: np.ndarray) -> np.ndarray:
     """
     Input:
         rsrp_dbm: (N, M) float
@@ -145,79 +217,132 @@ def extract_best_neighbor_ru( rsrp_dbm: np.ndarray, serving_ru: np.ndarray
 
     Output:
         best_neighbor_ru: (N,) int
-        best_neighbor_rsrp_dbm: (N,) float
     """
     rsrp_copy = rsrp_dbm.copy()
     ue_idx = np.arange(serving_ru.shape[0])
     rsrp_copy[ue_idx, serving_ru] = -1e12
-
-    best_neighbor_ru = np.argmax(rsrp_copy, axis=1).astype(np.int32)
-    best_neighbor_rsrp_dbm = rsrp_copy[ue_idx, best_neighbor_ru].astype(np.float64)
-
-    return best_neighbor_ru, best_neighbor_rsrp_dbm
+    return np.argmax(rsrp_copy, axis=1).astype(np.int32)
 
 
-def estimate_radio_state( ue_pos: np.ndarray, ru_pos: np.ndarray, carrier_freq_ghz: float, bandwidth_mhz: float, noise_figure_db: float, ru_tx_power_dbm: float
-) -> dict:
+def extract_best_neighbor_gain( gain: np.ndarray, best_neighbor_ru: np.ndarray) -> np.ndarray:
+    """
+    Input:
+        gain: (N, M) float
+        best_neighbor_ru: (N,) int
+
+    Output:
+        best_neighbor_gain: (N,) float
+    """
+    ue_idx = np.arange(best_neighbor_ru.shape[0])
+    return gain[ue_idx, best_neighbor_ru].astype(np.float64)
+
+
+def estimate_radio_state(
+    ue_pos: np.ndarray,
+    ru_pos: np.ndarray,
+    carrier_freq_ghz: float,
+    rb_bandwidth_hz: float,
+    noise_figure_db: float,
+    ru_tx_power_dbm: float,
+    n_antennas: int = 32,
+) -> Dict:
     """
     Input:
         ue_pos: (N, 2) float
         ru_pos: (M, 2) float
         carrier_freq_ghz: float
-        bandwidth_mhz: float
+        rb_bandwidth_hz: float
         noise_figure_db: float
         ru_tx_power_dbm: float
+        n_antennas: int
 
     Output:
         radio_state: dict
             distance_m: (N, M)
             pathloss_db: (N, M)
+            noise_power_rb_w: float
+            fading_power: (N, M)
+            channel_power_w: (N, M)
+            gain: (N, M)
             rsrp_dbm: (N, M)
-            sinr_db: (N, M)
             serving_ru: (N,)
-            serving_rsrp_dbm: (N,)
-            serving_sinr_db: (N,)
+            serving_gain: (N,)
             best_neighbor_ru: (N,)
-            best_neighbor_rsrp_dbm: (N,)
-            noise_power_dbm: float
+            best_neighbor_gain: (N,)
     """
-    distance_m = compute_distance_matrix(ue_pos=ue_pos, ru_pos=ru_pos)
+    n_ue = ue_pos.shape[0]
+    n_ru = ru_pos.shape[0]
+
+    distance_m = compute_distance_matrix(
+        ue_pos=ue_pos,
+        ru_pos=ru_pos,
+    )
+
     pathloss_db = compute_pathloss_db(
         distance_m=distance_m,
         carrier_freq_ghz=carrier_freq_ghz,
     )
-    rsrp_dbm = compute_rsrp_dbm(
-        pathloss_db=pathloss_db,
-        ru_tx_power_dbm=ru_tx_power_dbm,
-    )
-    noise_power_dbm = compute_noise_power_dbm(
-        bandwidth_mhz=bandwidth_mhz,
+
+    noise_power_rb_w = compute_noise_power_per_rb_w(
+        rb_bandwidth_hz=rb_bandwidth_hz,
         noise_figure_db=noise_figure_db,
     )
-    sinr_db = compute_sinr_db(
-        rsrp_dbm=rsrp_dbm,
-        noise_power_dbm=noise_power_dbm,
+
+    fading_power = generate_rayleigh_channel_power(
+        n_ue=n_ue,
+        n_ru=n_ru,
+        n_antennas=n_antennas,
     )
-    serving_ru = select_serving_ru(rsrp_dbm=rsrp_dbm)
-    serving_rsrp_dbm, serving_sinr_db = extract_serving_metrics(
+
+    large_scale_power_w = compute_large_scale_power_w(
+        ru_tx_power_dbm=ru_tx_power_dbm,
+        pathloss_db=pathloss_db,
+    )
+
+    channel_power_w = compute_channel_power_w(
+        large_scale_power_w=large_scale_power_w,
+        fading_power=fading_power,
+        n_antennas=n_antennas,
+    )
+
+    gain = compute_gain(
+        channel_power_w=channel_power_w,
+        noise_power_rb_w=noise_power_rb_w,
+    )
+
+    rsrp_dbm = compute_rsrp_dbm(
+        channel_power_w=channel_power_w,
+    )
+
+    serving_ru = select_serving_ru_from_rsrp(
         rsrp_dbm=rsrp_dbm,
-        sinr_db=sinr_db,
+    )
+
+    serving_gain = extract_serving_gain(
+        gain=gain,
         serving_ru=serving_ru,
     )
-    best_neighbor_ru, best_neighbor_rsrp_dbm = extract_best_neighbor_ru(
+
+    best_neighbor_ru = extract_best_neighbor_ru(
         rsrp_dbm=rsrp_dbm,
         serving_ru=serving_ru,
+    )
+
+    best_neighbor_gain = extract_best_neighbor_gain(
+        gain=gain,
+        best_neighbor_ru=best_neighbor_ru,
     )
 
     return {
         "distance_m": distance_m,
         "pathloss_db": pathloss_db,
+        "noise_power_rb_w": noise_power_rb_w,
+        "fading_power": fading_power,
+        "channel_power_w": channel_power_w,
+        "gain": gain,
         "rsrp_dbm": rsrp_dbm,
-        "sinr_db": sinr_db,
         "serving_ru": serving_ru,
-        "serving_rsrp_dbm": serving_rsrp_dbm,
-        "serving_sinr_db": serving_sinr_db,
+        "serving_gain": serving_gain,
         "best_neighbor_ru": best_neighbor_ru,
-        "best_neighbor_rsrp_dbm": best_neighbor_rsrp_dbm,
-        "noise_power_dbm": noise_power_dbm,
+        "best_neighbor_gain": best_neighbor_gain,
     }
