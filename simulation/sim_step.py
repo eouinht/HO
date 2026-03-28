@@ -18,7 +18,7 @@ from TrafficQueueManager import (
     check_qos_violation,
 )
 from LatencyModel import estimate_latency_state
-from Handover_candidate_filter import classify_stable_and_candidate_ue
+from simulation.HandoverCandidateFilter import classify_stable_and_candidate_ue
 
 
 def run_single_simulation_step(

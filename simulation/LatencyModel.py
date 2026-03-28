@@ -165,12 +165,16 @@ def estimate_latency_state(
     packet_size_bits: np.ndarray,
     throughput_bps: np.ndarray,
     arrival_rate_packets_per_s: np.ndarray,
+    
     du_cpu_required: np.ndarray,
     du_cpu_capacity: np.ndarray,
+    
     cu_cpu_required: np.ndarray,
     cu_cpu_capacity: np.ndarray,
+    
     du_service_rate_packets_per_s: np.ndarray,
     cu_service_rate_packets_per_s: np.ndarray,
+    
     ho_delay_s: np.ndarray = None,
 ) -> Dict:
     """
