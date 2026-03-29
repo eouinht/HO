@@ -77,23 +77,38 @@ def create_default_config() -> SimulationConfig:
         cfg: SimulationConfig
     """
 # Check lại 
+    # embb = SliceConfig(
+    #     name = "EMBB",
+    #     r_min_bps=2e6,
+    #     sinr_min_db=0.0,
+    #     delay_max_s=0.05,
+    #     eta=0.1,
+    #     lambda_arrival_bps=4e6,
+    # )
+    # urllc = SliceConfig(
+    #     name = "URLLC",
+    #     r_min_bps=1e6,
+    #     sinr_min_db=5.0,
+    #     delay_max_s=0.005,
+    #     eta=0.2,
+    #     lambda_arrival_bps=1e6,
+    # )
     embb = SliceConfig(
         name = "EMBB",
-        r_min_bps=2e6,
-        sinr_min_db=0.0,
-        delay_max_s=0.05,
-        eta=0.1,
-        lambda_arrival_bps=4e6,
+        r_min_bps=50e6,
+        sinr_min_db=10.0,
+        delay_max_s=5e-3,
+        eta=0.05,
+        lambda_arrival_bps=100.0
     )
     urllc = SliceConfig(
         name = "URLLC",
-        r_min_bps=1e6,
-        sinr_min_db=5.0,
-        delay_max_s=0.005,
-        eta=0.2,
-        lambda_arrival_bps=1e6,
+        r_min_bps=5e6,
+        sinr_min_db=20.0,
+        delay_max_s=1e-3,
+        eta=0.08,
+        lambda_arrival_bps=500.0
     )
-    
 
     cfg = SimulationConfig(
         # topology
