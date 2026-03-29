@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Dict
 
+# Them cac thuat toan phan bo tai nguyen vao file rieng
 
 def init_resource_state(
     serving_ru: np.ndarray,

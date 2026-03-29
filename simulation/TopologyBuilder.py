@@ -76,7 +76,7 @@ def build_topology( n_ru: int,
     """
 
     # 1. positions
-    ru_pos = generate_ru_positions(n_ru)
+    ru_pos = generate_ru_positions(n_ru,area_size, offset)
 
     # 2. mapping
     ru_to_du = map_ru_to_du(n_ru, n_du)

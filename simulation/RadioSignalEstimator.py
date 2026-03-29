@@ -1,18 +1,53 @@
 import numpy as np
 from typing import Tuple, Dict 
+from numpy.linalg import norm
+ 
+# Check lai logic / cong thuc 
 
-def compute_distance_matrix(ue_pos: np.ndarray, ru_pos: np.ndarray) -> np.ndarray:
-    """
-    Input:
-        ue_pos: (N, 2) float
-        ru_pos: (M, 2) float
+# def compute_distance_matrix(ue_pos: np.ndarray, ru_pos: np.ndarray) -> np.ndarray:
+#     """
+#     Input:
+#         ue_pos: (N, 2) float
+#         ru_pos: (M, 2) float
 
-    Output:
-        distance_m: (N, M) float
-    """
-    diff = ue_pos[:, None, :] - ru_pos[None, :, :]
-    distance_m = np.linalg.norm(diff, axis=2)
-    return np.maximum(distance_m, 1.0).astype(np.float64)
+#     Output:
+#         distance_m: (N, M) float
+#     """
+#     diff = ue_pos[:, None, :] - ru_pos[None, :, :]
+#     distance_m = np.linalg.norm(diff, axis=2)
+#     return np.maximum(distance_m, 1.0).astype(np.float64)
+
+def gen_coordinates_RU(num_RUs, radius_out = 1000):
+    circle_RU_out = radius_out * 0.65
+    angles = np.linspace(0, 2 * np.pi, num_RUs - 1, endpoint=False) 
+    x = np.concatenate(([0], circle_RU_out * np.cos(angles)))  
+    y = np.concatenate(([0], circle_RU_out * np.sin(angles)))  
+    coordinates_RU = list(zip(x, y)) 
+    return coordinates_RU
+
+def gen_coordinates_UE(num_UEs, radius_in = 10, radius_out = 1000):
+
+    angles = np.random.uniform(0, 2 * np.pi, num_UEs)
+    r = np.random.uniform(radius_in, radius_out, num_UEs)
+    
+    x = r * np.cos(angles)
+    y = r * np.sin(angles)
+    
+    coordinates_UE = list(zip(x, y))  
+    return coordinates_UE
+
+
+
+def calculate_distances(coordinates_RU, coordinates_UE, num_RUs, num_UEs):
+    distances_RU_UE = np.zeros((num_RUs, num_UEs))
+    for i in range(num_RUs):
+        for j in range(num_UEs):
+            x_RU, y_RU = coordinates_RU[i]
+            x_UE, y_UE = coordinates_UE[j]
+            distances_RU_UE[i, j] = np.sqrt((x_RU - x_UE)**2 + (y_RU - y_UE)**2)
+    return distances_RU_UE
+
+
 
 def compute_pathloss_db(distance_m: np.ndarray, carrier_freq_ghz: float) -> np.ndarray:
     """
@@ -27,8 +62,8 @@ def compute_pathloss_db(distance_m: np.ndarray, carrier_freq_ghz: float) -> np.n
     """
     
     pathloss_db = (
-        32.4
-        + 21.0 * np.log10(distance_m)
+        28
+        + 22.0 * np.log10(distance_m)
         + 20.0 * np.log10(carrier_freq_ghz)
     )
     return pathloss_db.astype(np.float64)
@@ -154,23 +189,72 @@ def compute_channel_power_w(
     channel_power_w = large_scale_power_w*normalized_fading
     return channel_power_w.astype(np.float64)
 
-def compute_gain( channel_power_w: np.ndarray,
-                 noise_power_rb_w: float) -> np.ndarray:
+#  Sua lai 
+# def compute_gain( channel_power_w: np.ndarray,
+#                  noise_power_rb_w: float) -> np.ndarray:
+#     """
+#     Apply Rayleigh fading to large-scale received power.
+
+#     Input:
+#         large_scale_power_w: (N, M) float
+#         fading_power: (N, M) float
+#         n_antennas: int
+
+#     Output:
+#         channel_power_w: (N, M) float
+#     """
+#     gain = channel_power_w/max(noise_power_rb_w, 1e-30)
+    
+#     return gain.astype(np.float64)
+
+
+
+def channel_gain(distances_RU_UE, num_RUs, num_UEs, bandwidth_per_RB):
     """
-    Apply Rayleigh fading to large-scale received power.
-
-    Input:
-        large_scale_power_w: (N, M) float
-        fading_power: (N, M) float
-        n_antennas: int
-
-    Output:
-        channel_power_w: (N, M) float
+    distances_RU_UE: ma trận [num_RUs x num_UEs] khoảng cách RU-UE (m)
+    bandwidth_per_RB: băng thông 1 RB (Hz)
     """
-    gain = channel_power_w/max(noise_power_rb_w, 1e-30)
-    return gain.astype(np.float64)
-
-
+    # ------------------- Antenna config -------------------
+    num_antennas = 32  # anten mỗi RU
+    
+    # ------------------- Noise power ----------------------
+    k_B = 1.38064852e-23   # Boltzmann constant (J/K)
+    T_K = 290              # Nhiệt độ (K)
+    N0_W_per_Hz = k_B * T_K
+    noise_figure_dB = 5
+    noise_figure_linear = 10 ** (noise_figure_dB / 10)
+    noise_power_RB = N0_W_per_Hz * bandwidth_per_RB * noise_figure_linear
+    
+    # ------------------- Carrier frequency ----------------
+    f_c_GHz = 6
+    
+    # ------------------- Pathloss model (3GPP UMa) --------
+    distances_RU_UE = np.maximum(distances_RU_UE, 1.0)  # tránh log(0)
+    
+    # scenarios (GHz) UMa (TR 38.901)
+    # Môi trường: Thành phố, nhà cao tâng
+    # Bán kính cell 500m - 1km
+    path_loss_db = 28 + 20 * np.log10(f_c_GHz) + 22 * np.log10(distances_RU_UE/1.0)
+    
+    # ------------------- Pathloss linear ------------------
+    path_loss_linear = 10 ** (-path_loss_db / 10)
+    
+    # ------------------- Rayleigh fading ------------------
+    channel_matrix = np.zeros((num_RUs, num_UEs))
+    for i in range(num_RUs):
+        for k in range(num_UEs):
+            # kênh MIMO Rayleigh (num_antennas anten)
+            h_real = np.random.randn(num_antennas)
+            h_imag = np.random.randn(num_antennas)
+            h = np.sqrt(path_loss_linear[i, k]) * (h_real + 1j*h_imag) / np.sqrt(2)
+            
+            # power gain (chuẩn hóa theo norm-2)
+            channel_matrix[i, k] = norm(h, 2) ** 2
+    
+    # ------------------- Channel gain (normalized by noise) ----
+    gain = channel_matrix / noise_power_RB
+    
+    return gain
 
 def compute_rsrp_dbm( channel_power_w: np.ndarray) -> np.ndarray:
     """
@@ -273,47 +357,65 @@ def estimate_radio_state(
     n_ue = ue_pos.shape[0]
     n_ru = ru_pos.shape[0]
 
-    distance_m = compute_distance_matrix(
-        ue_pos=ue_pos,
-        ru_pos=ru_pos,
-    )
+    # distance_m = compute_distance_matrix(
+    #     ue_pos=ue_pos,
+    #     ru_pos=ru_pos,
+    # )
 
-    pathloss_db = compute_pathloss_db(
-        distance_m=distance_m,
-        carrier_freq_ghz=carrier_freq_ghz,
+    distance_m = calculate_distances(
+        coordinates_RU=gen_coordinates_RU(n_ru),
+        coordinates_UE=gen_coordinates_UE(n_ue),
+        num_RUs=n_ru,
+        num_UEs=n_ue
     )
+    
+    # pathloss_db = compute_pathloss_db(
+    #     distance_m=distance_m,
+    #     carrier_freq_ghz=carrier_freq_ghz,
+    # )
 
-    noise_power_rb_w = compute_noise_power_per_rb_w(
-        rb_bandwidth_hz=rb_bandwidth_hz,
-        noise_figure_db=noise_figure_db,
+    # noise_power_rb_w = compute_noise_power_per_rb_w(
+    #     rb_bandwidth_hz=rb_bandwidth_hz,
+    #     noise_figure_db=noise_figure_db,
+    # )
+
+    # fading_power = generate_rayleigh_channel_power(
+    #     n_ue=n_ue,
+    #     n_ru=n_ru,
+    #     n_antennas=n_antennas,
+    # )
+
+    # large_scale_power_w = compute_large_scale_power_w(
+    #     ru_tx_power_dbm=ru_tx_power_dbm,
+    #     pathloss_db=pathloss_db,
+    # )
+
+    # channel_power_w = compute_channel_power_w(
+    #     large_scale_power_w=large_scale_power_w,
+    #     fading_power=fading_power,
+    #     n_antennas=n_antennas,
+    # )
+
+    # gain = compute_gain(
+    #     channel_power_w=channel_power_w,
+    #     noise_power_rb_w=noise_power_rb_w,
+    # )
+    gain = channel_gain(
+        distance_m,
+        n_ru,
+        n_ue,
+        rb_bandwidth_hz
     )
+    
+    # rsrp_dbm = compute_rsrp_dbm(
+    #     channel_power_w=channel_power_w,
+    # )
 
-    fading_power = generate_rayleigh_channel_power(
-        n_ue=n_ue,
-        n_ru=n_ru,
-        n_antennas=n_antennas,
-    )
-
-    large_scale_power_w = compute_large_scale_power_w(
-        ru_tx_power_dbm=ru_tx_power_dbm,
-        pathloss_db=pathloss_db,
-    )
-
-    channel_power_w = compute_channel_power_w(
-        large_scale_power_w=large_scale_power_w,
-        fading_power=fading_power,
-        n_antennas=n_antennas,
-    )
-
-    gain = compute_gain(
-        channel_power_w=channel_power_w,
-        noise_power_rb_w=noise_power_rb_w,
-    )
-
-    rsrp_dbm = compute_rsrp_dbm(
-        channel_power_w=channel_power_w,
-    )
-
+    # Co the chon serving ru theo gain/ khoang cach (Thuat toan heuristic) -> maping RU-UE
+    # Tao file rieng cho cac thuat toan mapping va evaluation
+    # ma tran 2 chieu UE-1RU
+    
+    
     serving_ru = select_serving_ru_from_rsrp(
         rsrp_dbm=rsrp_dbm,
     )

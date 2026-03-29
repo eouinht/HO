@@ -33,7 +33,7 @@ class HandoverEnv(gym.Env):
         cfg=None,
         area_size: float = 500.0,
         embb_ratio: float = 0.7,
-        max_candidate_ue: int = 5,
+        max_candidate_ue: int = 10,
         max_steps: int | None = None,
     ):
         super().__init__()
@@ -97,6 +97,9 @@ class HandoverEnv(gym.Env):
             ru_prb_cap=self.cfg.ru_prb_cap,
             du_cpu_cap=self.cfg.du_cpu_cap,
             cu_cpu_cap=self.cfg.cu_cpu_cap,
+            layout_type=self.cfg.ru_layout,
+            area_size= self.cfg.area_size,
+            offset=self.cfg.ru_layout_offset
         )
 
         self.ue_pos, self.ue_vel, self.ue_slice = init_ue_state(
@@ -216,6 +219,10 @@ class HandoverEnv(gym.Env):
             lambda_arrival_bps=lambda_arrival_bps,
             dt=self.cfg.time_step_s,
         )
+        print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        seving_gain = radio_state["serving_gain"]
+        print(f"serving_gain:{seving_gain}")
+        
         throughput_bps = traffic_state["throughput_bps"]
 
         # 5) CPU requirements and latency
@@ -333,6 +340,7 @@ class HandoverEnv(gym.Env):
 
         action_out = process_candidate_ues(
             candidate_mask=candidate_mask,
+            filter_state=filter_state,
             radio_state=radio_state_for_action,
             topology=self.topology,
             resource_state=resource_state,

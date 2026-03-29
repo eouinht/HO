@@ -29,7 +29,7 @@ def estimate_required_prb_for_target(
     target_gain: float,
     power_alloc_w: float,
     rb_bandwidth_hz: float,
-    max_prb_search: int = 100
+    ru_prb_cap : int = 100
 ) -> float:
     """
     Input:
@@ -41,12 +41,18 @@ def estimate_required_prb_for_target(
     Output:
         required_prb: float
     """
-    
-    candiate_prb = np.arange(1, max_prb_search + 1, dtype=np.float64)
+    r_min_bps = float(r_min_bps)
+    target_gain = float(target_gain)
+    power_alloc_w = float(power_alloc_w)
+    rb_bandwidth_hz = float(rb_bandwidth_hz)
+    ru_prb_cap = int(ru_prb_cap)
+
+    candiate_prb = np.arange(1, ru_prb_cap  + 1, dtype=np.float64)
     snr_per_rb = (power_alloc_w / candiate_prb) * target_gain
     rate = candiate_prb * rb_bandwidth_hz * np.log2(1.0 + snr_per_rb)
     
     feasible = np.where(rate >= r_min_bps)[0]
+    
     if feasible.size > 0:
         return float(candiate_prb[feasible[0]])
     return float(candiate_prb[-1])
@@ -67,7 +73,7 @@ def check_prb_fesibility(
             local_free_prb: float
             extra_needed_from_pool: float
     """
-    current_prb = resource_state["ue_alloceted_prb"][ue_id]
+    current_prb = resource_state["ue_allocated_prb"][ue_id]
     effective_pool_free = resource_state["prb_pool_free"] + current_prb
     
     local_free_prb = float(resource_state["ru_free_prb"][target_ru])
@@ -202,15 +208,15 @@ def check_handover_feasibility(
     """
     
     target_gain = float(radio_state["gain"][ue_id, target_ru])
-    target_distance_m, = float(radio_state["distance_m"][ue_id, target_ru])
+    target_distance_m = float(radio_state["distance_m"][ue_id, target_ru])
     power_alloc_w = float(resource_state["ue_power_alloc_w"][ue_id])
     
     required_prb = estimate_required_prb_for_target(
-        r_min_bps,
-        target_gain,
-        power_alloc_w,
-        rb_bandwidth_hz, 
-        ru_prb_cap
+        r_min_bps=r_min_bps[ue_id],
+        target_gain=target_gain,
+        power_alloc_w=power_alloc_w,
+        rb_bandwidth_hz=rb_bandwidth_hz, 
+        ru_prb_cap=ru_prb_cap
     )
     
     prb_check = check_prb_fesibility(
@@ -218,9 +224,7 @@ def check_handover_feasibility(
         source_ru,
         target_ru,
         required_prb,
-        resource_state["ru_free_prb"],
-        resource_state["prb_pool_free"],
-        resource_state["ru_prb_allocated"],
+        resource_state,
         ru_prb_cap
     )
     
@@ -291,8 +295,8 @@ def check_handover_feasibility(
         topology["du_cpu_cap"][path_check["target_du"]],
         cu_cpu_required[ue_id],
         topology["cu_cpu_cap"][path_check["target_cu"]],
-        du_service_rate_pps[path_check["target_du"]],
-        cu_service_rate_pps[path_check["target_cu"]],
+        du_cpu_used[path_check["target_du"]],
+        cu_cpu_used[path_check["target_cu"]],
         delay_max_s[ue_id],
         ho_delay_s
     )

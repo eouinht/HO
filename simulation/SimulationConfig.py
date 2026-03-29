@@ -124,7 +124,7 @@ def create_default_config() -> SimulationConfig:
         carrier_freq_ghz=3.5,
         bandwidth_mhz=20.0,
         rb_bandwidth_hz=180e3,
-        noise_figure_db=9.0,
+        noise_figure_db=5.0,
         ru_tx_power_dbm=43.0,
         prb_total=100,
 
